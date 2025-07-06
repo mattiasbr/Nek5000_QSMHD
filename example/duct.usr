@@ -1,0 +1,380 @@
+c-----------------------------------------------------------------------
+c
+c     MHD duct flow
+c      
+c     Note: This relies on quadruple precision routines in GNU compiler
+c           suite for evaluating the series in the Shercliff solution.
+c
+c-----------------------------------------------------------------------
+      subroutine uservp(ix,iy,iz,ieg)
+      include 'SIZE'
+      include 'NEKUSE'          ! UDIFF, UTRANS
+      include 'PARALLEL'        ! GLLEL      
+      include 'SOLN'            ! VSIGM
+
+      UDIFF =1.0
+      UTRANS=1.0
+
+      iel = GLLEL(ieg)
+      VSIGM(ix,iy,iz,iel) = 1.0
+      
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userf(ix,iy,iz,ieg)
+      include 'SIZE'            ! 
+      include 'NEKUSE'          ! FFX, FFY, FFZ
+      include 'PARALLEL'        ! GLLEL
+      include 'INPUT'           ! PARAM, HA
+      include 'SOLN'            ! JX, JY, JZ
+      
+      common /SCRCRS/ vloc(3), vbloc(3)
+
+c     Interaction parameter (Stuart number)
+      re    = 1.0/PARAM(2)
+      ha2re = HA**2/re
+
+c     Evaluate the Lorentz force        
+      iel = GLLEL(ieg)
+      vloc(1) = JX(ix,iy,iz,iel)
+      vloc(2) = JY(ix,iy,iz,iel)
+      vloc(3) = JZ(ix,iy,iz,iel)
+      call cross(vbloc,vloc,EBVEC)
+
+c     Volume force
+      FFX = ha2re*vbloc(1)
+      FFY = ha2re*vbloc(2)
+      FFZ = ha2re*vbloc(3)
+      
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userq(ix,iy,iz,ieg)
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine userchk
+c
+c     Note: If the velocity field is somehow modified here, ohms_law()
+c           should be called at the end of userchk() to get a consistent
+c           current density field.
+c
+      include 'SIZE'
+      include 'TSTEP'           ! ISTEP
+      include 'INPUT'           ! HA, PARAM, UPARAM
+      include 'SOLN'            ! VX1, VY1, VZ1, VMULT, JX, JY, JZ
+      include 'GEOM'            ! YM1, ZM1
+
+      integer nterm, iterm, ntot
+      real tol, qvol
+      real mask(LX1,LY1,LZ1,LELV), term(LX1,LY1,LZ1,LELV)
+
+      common /scrcg/ wk1(LX1*LY1*LZ1), wk2(LX1*LY1*LZ1)
+            
+      ntot = NX1*NY1*NZ1*NELV
+
+!     Generate the analytical series solution
+      if (ISTEP.eq.0) then
+         nterm = UPARAM(3)
+         tol   = UPARAM(4)
+         call rone(mask,ntot)
+
+         call shercliff_velocity
+     $        (VX,YM1,ZM1,mask,VMULT,ntot,nterm,term,tol)
+         call shercliff_ycurrent
+     $        (JY,YM1,ZM1,mask,VMULT,ntot,nterm,term,tol)
+         call shercliff_zcurrent
+     $        (JZ,YM1,ZM1,mask,VMULT,ntot,nterm,term,tol)
+         qvol = shercliff_flowrate(nterm,tol,iterm)
+
+!     Scale the analytical solution
+         scv = PARAM(55)/qvol
+         scj = scv/HA
+         call cmult(VX,scv,ntot)
+         call cmult(JY,scj,ntot)
+         call cmult(JZ,scj,ntot)
+         
+!     Zero remaining components
+         call rzero(VY,ntot)
+         call rzero(VZ,ntot)
+         call rzero(JX,ntot)
+      endif
+
+!     Output the electromagnetic variables in the temperature array
+      if (istep.eq.IOSTEP) then
+         call opcopy(T(1,1,1,1,2),T(1,1,1,1,3),T(1,1,1,1,4),JX,JY,JZ)
+         call mappr(T(1,1,1,1,5),EPOT,wk1,wk2)
+      endif
+      
+      return
+      end      
+c-----------------------------------------------------------------------
+      subroutine userbc(ix,iy,iz,iside,eg)
+      include 'SIZE'
+      include 'NEKUSE'          ! UX, UY, UZ, TEMP
+
+c     velocity
+      UX = 0.0
+      UY = 0.0
+      UZ = 0.0
+
+c     t
+      TEMP=0.0
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine useric(ix,iy,iz,ieg)
+      include 'SIZE'
+      include 'NEKUSE'          ! UX, UY, UZ, TEMP
+ 
+c     velocity
+      UX = 0.0
+      UY = 0.0
+      UZ = 0.0
+      
+c     t
+      TEMP = 0.0
+      
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat
+      include 'SIZE'
+      include 'INPUT'
+
+c     Set flow rate parameter values
+      PARAM(54) = UPARAM(1)
+      PARAM(55) = UPARAM(2)
+ 
+      rey       = 1.0/PARAM(2)
+
+c     Output the electromagnetic quantities as scalars
+      IFTO = .false.
+      nscal = 4
+      do i=1,nscal
+         IFPSCO(i) = .true.
+      enddo
+      
+c     Output to log
+      if (nid.eq.0) then
+         write(6,'(A)') ' QS MHD parameters: '
+         write(6,'(A,E12.5)') '            Ha = ', HA 
+         write(6,'(A,E12.5)') '             R = ', rey/HA
+         write(6,'(A,E12.5)') '       Ha^2/Re = ', HA**2/rey
+         write(6,810)        '            e_B = ',
+     $        EBVEC(1), EBVEC(2), EBVEC(3)
+      endif
+ 810  format (A,'[',F8.4,',',F8.4,',',F8.4,']')
+      
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine usrdat2
+      include 'SIZE'
+      return
+      end
+c-----------------------------------------------------------------------
+      SUBROUTINE usrdat3 
+      include 'SIZE'
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine shercliff_velocity(u,y,z,msk,mult,n,nterm,term,tol)
+c     Mueller & Buehler, eq. 87
+      implicit none      
+      include 'SIZE'
+      include 'INPUT'           ! HA      
+      integer i, j, n, nterm, jterm, minterm
+      parameter (minterm=2)     ! min no terms
+      real tol
+      real u(1), y(1), z(1), term(1), msk(1), mult(1)
+      logical iconv
+      real*16 lam, pi, p1, p2, alp, th, usum, resid, zi, yi, haq
+
+      if (nterm.lt.minterm) nterm = minterm
+      pi = 4.0q0*atan(1.0q0)
+      haq = 1.0q0*HA
+      iconv = .false.
+      do i=1,n
+         usum = 0.0q0
+         zi   = 1.0q0*z(i)
+         yi   = 1.0q0*y(i)
+         do j=0,nterm-1
+            lam = 0.5q0*pi*(2.0q0*float(j)+1.0q0)
+            p1  = sqrt( lam**2 + 0.5q0*haq**2 +
+     $                  haq*sqrt(lam**2 + 0.25q0*haq**2) )
+            p2  = sqrt( lam**2 + 0.5q0*haq**2 -
+     $                  haq*sqrt(lam**2 + 0.25q0*haq**2) )
+            th  = p2*(lam**2 - p1**2)*sinh(p1)*cosh(p2)
+     $          - p1*(lam**2 - p2**2)*sinh(p2)*cosh(p1)         
+            alp = p1*(lam**2 - p2**2)*sinh(p2)*cosh(p1*yi)
+     $          - p2*(lam**2 - p1**2)*sinh(p1)*cosh(p2*yi)
+
+            resid = 2.0q0*((-1.0q0)**j)/(lam**3*th)*alp*cos(lam*zi)
+            usum = usum + resid
+            jterm = j
+            if (j.ge.(minterm-1).and.abs(resid).lt.(1.0q0*tol)) then           
+               iconv = .true.
+               exit
+            endif
+         enddo
+         if (.not.iconv)
+     $        write(6,*) 'WARNING: velocity series not converged.',
+     $        abs(resid), jterm, y(i), z(i)
+         u(i) = 0.5*(1.-zi**2) + 1.0d0*usum
+         term(i) = float(jterm)
+      enddo
+      call col2(u,msk,n)
+      call dssum(u,NX1,NY1,NZ1)
+      call col2(u,mult,n)
+      
+      return
+      end
+c-----------------------------------------------------------------------     
+      subroutine shercliff_ycurrent(u,y,z,msk,mult,n,nterm,term,tol)
+c     Mueller & Buehler, eq. 87 and eq. 3
+      implicit none      
+      include 'SIZE'
+      include 'INPUT'           ! HA      
+      integer i, j, n, nterm, jterm, minterm
+      parameter (minterm=2)     ! min no terms
+      real tol
+      real u(1), y(1), z(1), term(1), msk(1), mult(1)
+      logical iconv
+      real*16 lam, pi, p1, p2, bet, th, usum, resid, zi, yi, haq
+
+      if (nterm.lt.minterm) nterm = minterm
+      pi  = 4.0q0*atan(1.0q0)
+      haq = 1.0q0*HA
+      iconv = .false.  
+      do i=1,n
+         usum = 0.0q0
+         zi   = 1.0q0*z(i)
+         yi   = 1.0q0*y(i)         
+         do j=0,nterm-1
+            lam = 0.5q0*pi*(2.0q0*float(j)+1.0q0)
+            p1  = sqrt( lam**2 + 0.5q0*haq**2 +
+     $                  haq*sqrt(lam**2 + 0.25q0*haq**2) )
+            p2  = sqrt( lam**2 + 0.5q0*haq**2 -
+     $                  haq*sqrt(lam**2 + 0.25q0*haq**2) )
+            th  = p2*(lam**2 - p1**2)*sinh(p1)*cosh(p2)
+     $          - p1*(lam**2 - p2**2)*sinh(p2)*cosh(p1)         
+            bet =-sinh(p2)*sinh(p1*yi) + sinh(p1)*sinh(p2*yi)
+
+            resid = -2.0q0*haq*((-1.0q0)**j)/th*bet*sin(lam*zi)
+            usum = usum + resid
+            jterm = j
+            if (j.ge.(minterm-1).and.abs(resid).lt.(1.0q0*tol)) then
+               iconv = .true.
+               exit
+            endif
+         enddo
+         if (.not.iconv)
+     $        write(6,*) 'WARNING: ycurrent series not converged.',
+     $        abs(resid), jterm, y(i), z(i)
+         u(i) = 1.0d0*usum
+         term(i) = float(jterm)
+      enddo
+      call col2(u,msk,n)
+      call dssum(u,NX1,NY1,NZ1)
+      call col2(u,mult,n)
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine shercliff_zcurrent(u,y,z,msk,mult,n,nterm,term,tol)
+c     Mueller & Buehler, eq. 87 and eq. 3
+      implicit none      
+      include 'SIZE'
+      include 'INPUT'           ! HA      
+      integer i, j, n, nterm, jterm, minterm
+      parameter (minterm=2)     ! min no terms
+      real tol
+      real u(1), y(1), z(1), term(1), msk(1), mult(1)
+      logical iconv
+      real*16 lam, pi, p1, p2, dbet, th, usum, resid, zi, yi, haq
+
+      if (nterm.lt.minterm) nterm = minterm
+      pi = 4.0q0*atan(1.0q0)
+      haq = 1.0q0*HA
+      iconv = .false.  
+      do i=1,n
+         usum = 0.0q0
+         zi   = 1.0q0*z(i)
+         yi   = 1.0q0*y(i)         
+         do j=0,nterm-1
+            lam = 0.5q0*pi*(2.0q0*float(j)+1.0q0)
+            p1  = sqrt( lam**2 + 0.5q0*haq**2 +
+     $                  haq*sqrt(lam**2 + 0.25q0*haq**2) )
+            p2  = sqrt( lam**2 + 0.5q0*haq**2 -
+     $                  haq*sqrt(lam**2 + 0.25q0*haq**2) )
+            th  = p2*(lam**2 - p1**2)*sinh(p1)*cosh(p2)
+     $          - p1*(lam**2 - p2**2)*sinh(p2)*cosh(p1)         
+            dbet= -p1*sinh(p2)*cosh(p1*yi) 
+     $          +  p2*sinh(p1)*cosh(p2*yi)
+
+            resid = -2.0q0*haq*((-1.0q0)**j)/(lam*th)*dbet*cos(lam*zi)
+            usum = usum + resid
+            jterm = j
+            if (j.ge.(minterm-1).and.abs(resid).lt.(1.0q0*tol)) then
+               iconv = .true.
+               exit
+            endif
+         enddo
+         if (.not.iconv)
+     $        write(6,*) 'WARNING: zcurrent series not converged.',
+     $        abs(resid), jterm, y(i), z(i)            
+         u(i) = 1.0d0*usum
+         term(i) = float(jterm)
+      enddo
+      call col2(u,msk,n)
+      call dssum(u,NX1,NY1,NZ1)
+      call col2(u,mult,n)
+
+      return
+      end      
+c-----------------------------------------------------------------------      
+      real function shercliff_flowrate(nterm,tol,jterm)      
+c     Mueller & Buehler, eq. 91
+      implicit none      
+      include 'SIZE'
+      include 'INPUT'           ! HA      
+      integer j, nterm, jterm, minterm
+      parameter (minterm=2)     ! min no terms
+      real tol
+      logical iconv
+      real*16 lam, pi, p1, p2, th, usum, resid, haq
+
+      if (nterm.lt.minterm) nterm = minterm
+      pi  = 4.0q0*atan(1.0q0)
+      haq = 1.0q0*HA
+      iconv = .false.      
+      usum = 0.0q0
+      do j=0,nterm-1
+         lam = 0.5q0*pi*(2.0q0*float(j)+1.0q0)
+         p1  = sqrt( lam**2 + 0.5q0*haq**2 +
+     $               haq*sqrt(lam**2 + 0.25q0*haq**2) )
+         p2  = sqrt( lam**2 + 0.5q0*haq**2 -
+     $               haq*sqrt(lam**2 + 0.25q0*haq**2) )
+         th  = p2*(lam**2 - p1**2)*sinh(p1)*cosh(p2)
+     $       - p1*(lam**2 - p2**2)*sinh(p2)*cosh(p1)         
+         
+         resid = 16.0q0*haq*sqrt(lam**2 + 0.25q0*haq**2)/(lam**4*th)*
+     $           sinh(p1)*sinh(p2)
+
+         usum = usum + resid
+         jterm = j
+         if (j.ge.(minterm-1).and.abs(resid).lt.(1.0q0*tol)) then
+            iconv = .true.
+            exit
+         endif
+      enddo
+      if (.not.iconv)
+     $     write(6,*) 'WARNING: flowrate series not converged.',
+     $     abs(resid), jterm
+      shercliff_flowrate = (4.0/3.0) + 1.0d0*usum
+      
+      return
+      end
+c-----------------------------------------------------------------------   

@@ -1,0 +1,40 @@
+#
+# Parameter file (MHD duct flow)
+#
+[PROBLEMTYPE]
+# equation = incompNS
+equation = stokes
+
+[GENERAL]
+dt                   = 1.0e-02
+numsteps             = 1.0e+02
+writeInterval        = 1.0e+02
+timeStepper          = BDF3
+writeDoublePrecision = 1.0
+
+userParam01 = 1.00e+00 # >0 for const flow rate or <0 bulk velocity
+	               # flow direction is given by (1=x, 2=y, 3=z)
+userParam02 = 4.00e+00 # flow rate/bulk velocity
+
+userParam03 = 2000     # Max. terms in series expansion
+userParam04 = 1.0e-11  # Tolerance for series expansion
+
+[QSMHD]
+hartmann     = 10.0
+conductivity = 1.0
+ebx          = 0.0
+eby          = 1.0
+ebz          = 0.0
+residualTol  = -1.0E-09
+residualProj = 1
+
+[VELOCITY]
+density      = 1.0
+viscosity    = -1000.0
+residualTol  = -1.0E-10
+residualProj = 1
+
+[PRESSURE]
+residualTol  = -1.0E-09
+residualProj = 1
+
