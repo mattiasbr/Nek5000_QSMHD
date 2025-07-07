@@ -65,8 +65,6 @@ c
       include 'SOLN'            ! VX1, VY1, VZ1, VMULT, JX, JY, JZ
       include 'GEOM'            ! YM1, ZM1
 
-      integer nterm, iterm, ntot
-      real tol, qvol
       real mask(LX1,LY1,LZ1,LELV), term(LX1,LY1,LZ1,LELV)
 
       common /scrcg/ wk1(LX1*LY1*LZ1), wk2(LX1*LY1*LZ1)
@@ -75,7 +73,7 @@ c
 
 !     Generate the analytical series solution
       if (ISTEP.eq.0) then
-         nterm = UPARAM(3)
+         nterm = int(UPARAM(3))
          tol   = UPARAM(4)
          call rone(mask,ntot)
 
@@ -101,7 +99,7 @@ c
       endif
 
 !     Output the electromagnetic variables in the temperature array
-      if (istep.eq.IOSTEP) then
+      if (ISTEP.eq.IOSTEP) then
          call opcopy(T(1,1,1,1,2),T(1,1,1,1,3),T(1,1,1,1,4),JX,JY,JZ)
          call mappr(T(1,1,1,1,5),EPOT,wk1,wk2)
       endif

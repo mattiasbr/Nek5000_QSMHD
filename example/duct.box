@@ -4,8 +4,8 @@ base.rea
 #==========================================================================================
 #
 # MHD duct flow
-# Note: In order to simulate a duct with (partly) perfectly conducting walls, replace 
-#       boundary conditions 'EI' with 'EC' as appropriate.
+# Note: In order to simulate a duct with perfectly conducting walls, replace boundary 
+#       conditions 'EI' with 'EC' as appropriate.
 #
 #==========================================================================================
 Box 1

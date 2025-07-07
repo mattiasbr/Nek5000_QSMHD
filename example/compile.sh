@@ -10,9 +10,10 @@ rm_cmd="rm -vf"
 # paths
 NEK_HOME=$HOME/Nek5000
 NEK_LOCAL=$(pwd)/Nek5000
-# modified and QSMHDT source files
+# modified Nek5000 and QSMHD source files
 MOD_SRC=$(pwd)/nek_src/core
 QSMHD_SRC=$(pwd)/src
+
 export MOD_FILES="$(ls $MOD_SRC)"
 export QSMHD_FILES="$(ls $QSMHD_SRC)"
 
